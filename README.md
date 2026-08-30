@@ -30,7 +30,7 @@ yourself following the same underlying approach.
 
 **1. A CUDA 13.2 + TensorRT 10.16 + cuDNN base image for this platform.**
 This doesn't exist prebuilt anywhere — it has to be assembled from the public Jetson apt
-repo. [https://huggingface.co/ldalipis/jp7-base-cuda13.2-trt10.16/tree/main, `docker load` it and tag it
+repo. [<a href="https://huggingface.co/ldalipis/jp7-base-cuda13.2-trt10.16/blob/main/jp7-base-cuda13.2-trt10.16.tar">jp7-base-cuda13.2-trt10.16.tar</a>, `docker load` it and tag it
 `lab5/jp7-base:cuda13.2-trt10.16` to match the commands below, or adjust the tag
 throughout.]
 
