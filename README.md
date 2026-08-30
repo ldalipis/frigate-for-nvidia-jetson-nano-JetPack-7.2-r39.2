@@ -30,7 +30,7 @@ yourself following the same underlying approach.
 
 **1. A CUDA 13.2 + TensorRT 10.16 + cuDNN base image for this platform.**
 This doesn't exist prebuilt anywhere — it has to be assembled from the public Jetson apt
-repo. [<a href="https://huggingface.co/ldalipis/jp7-base-cuda13.2-trt10.16/blob/main/jp7-base-cuda13.2-trt10.16.tar">jp7-base-cuda13.2-trt10.16.tar</a>, `docker load` it and tag it
+repo. [Download: <a href="https://huggingface.co/ldalipis/jp7-base-cuda13.2-trt10.16/blob/main/jp7-base-cuda13.2-trt10.16.tar">jp7-base-cuda13.2-trt10.16.tar</a>, `docker load` it and tag it
 `lab5/jp7-base:cuda13.2-trt10.16` to match the commands below, or adjust the tag
 throughout.]
 
@@ -38,7 +38,7 @@ throughout.]
 No prebuilt wheel exists for JetPack 7 anywhere — this has to be compiled from source,
 and it's the single most time- and memory-intensive part of this whole project (budget
 real time and make sure you have swap configured — 16GB was sufficient on an Orin Nano).
-Not covered in this guide. [Attach: `onnxruntime_gpu-1.23.0-cp312-cp312-linux_aarch64.whl`]
+Not covered in this guide. [Download: <a href="https://huggingface.co/ldalipis/jp7-base-cuda13.2-trt10.16/blob/main/onnxruntime_gpu-1.23.0-cp312-cp312-linux_aarch64.whl">onnxruntime_gpu-1.23.0-cp312-cp312-linux_aarch64.whl</a>]
 
 Both of the above credit **straga's `jetson-jp7-onnxruntime`** project, which pioneered
 this specific combination for JetPack 7.2.
