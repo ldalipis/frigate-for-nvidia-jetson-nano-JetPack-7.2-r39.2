@@ -7,6 +7,14 @@ GPU-accelerated object detection (ONNX Runtime + TensorRT) and NVDEC hardware vi
 both working. 0.18.2 is a security release (go2rtc exec-filter RCE, websocket viewer RCE,
 `/auth` path handling), so use it rather than the 0.18.0 betas.
 
+**Python 3.12.** Frigate's Dockerfiles are written for Python 3.11, but JetPack 7.2 is
+based on Ubuntu 24.04, whose native Python is 3.12. Rather than installing 3.11 on top
+(for example from a PPA) so that stock Frigate wheels fit, this guide builds Frigate on
+the native Python 3.12: it swaps the Python version in the build, supplies an
+onnxruntime wheel compiled for cp312, and strips or replaces the dependencies that only
+exist as cp311 wheels (`tflite_runtime`, `hailort`, and a stray bundled onnxruntime).
+Part 1 step 3 lists every change.
+
 - **Part 1** is the complete guide: from a fresh JetPack 7.2 install to a running
   Frigate 0.18.2 container.
 - **Appendix A** covers building Frigate 0.16.2 the same way. It is optional, and is also
