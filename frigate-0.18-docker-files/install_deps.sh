@@ -64,7 +64,7 @@ fi
 # ffmpeg -> arm64
 if [[ "${TARGETARCH}" == "arm64" ]]; then
     if [[ "${BASE_IMAGE}" == *"jp7-base"* ]]; then
-        echo "Info: Installing ffmpeg via apt for jp7-base — the NVIDIA Jetson apt repo's higher priority means this picks up the NVDEC-capable (h264_nvv4l2dec) build instead of a generic community binary."
+        echo "Info: ffmpeg for jp7-base is supplied by the Dockerfile (jp7-ffmpeg-nvdec.tgz), not downloaded here."
         apt-get -qq update
         apt-get -qq install --no-install-recommends -y ffmpeg
         # Frigate's startup tooling expects a binary at this hardcoded path

@@ -8,10 +8,12 @@ object detection (ONNX Runtime + TensorRT) and NVDEC hardware video decode both 
 Two versions are covered:
 - **Part 1 — Frigate 0.16.2**: the simpler, more stable path. Build this first regardless
   of which version you actually want to run day to day — Part 2 depends on it.
-- **Part 2 — Frigate 0.18.0-beta3**: optional migration on top of Part 1, with several
-  additional patches this newer version's build scripts need.
+- **Part 2 — Frigate 0.18.2**: optional migration on top of Part 1, with several
+  additional patches this newer version's build scripts need. 0.18.2 is a security
+  release (go2rtc exec-filter RCE, websocket viewer RCE, `/auth` path handling), so use it
+  rather than the 0.18.0 betas.
 
-Tested hardware: Jetson Orin Nano, JetPack 7.2 (L4T r39.2), CUDA 13.2, TensorRT 10.16,
+Tested hardware: Jetson Orin Nano (Super dev kit), JetPack 7.2 and 7.2.1 (L4T r39.2), CUDA 13.2, TensorRT 10.16,
 Ubuntu 24.04, sm_87.
 
 ---
@@ -169,26 +171,20 @@ transient failures in testing (stale/incomplete apt indexes under concurrent bui
 load being the most common cause) — don't assume a repeat failure at the same spot
 means something's fundamentally broken before trying at least once more.
 
-### 7. Fix the host-level `nvidia-container-toolkit` regression (critical, do this now)
+### 7. Check `nvidia-container-toolkit` (older advice is obsolete)
 
-`nvidia-container-toolkit`/`libnvidia-container*` at **1.19.x** has a real bug — a new
-"CUDA Forward Compatibility" hook for Tegra/Orin systems panics
-(`cudacompat.trim: slice bounds out of range`) on non-official (hand-assembled) base
-images, breaking **every** container using `--runtime nvidia`. Downgrade and hold:
+Early on JetPack 7.2.0, `nvidia-container-toolkit` 1.19.x panicked
+(`cudacompat.trim: slice bounds out of range`) on hand-assembled base images, and this
+guide told you to downgrade to 1.18.2 and hold it. **That is no longer needed:** 1.19.1-1
+works on JetPack 7.2.1 with no holds (1.20.0 exists upstream and is untested here).
+Test before relying on it:
 ```bash
-sudo apt-get install --allow-downgrades \
-  nvidia-container-toolkit=1.18.2-1 \
-  nvidia-container-toolkit-base=1.18.2-1 \
-  libnvidia-container-tools=1.18.2-1 \
-  libnvidia-container1=1.18.2-1
-
-sudo apt-mark hold nvidia-container-toolkit nvidia-container-toolkit-base \
-  libnvidia-container-tools libnvidia-container1
+sudo docker run --rm --runtime nvidia lab5/jp7-base:cuda13.2-trt10.16 python3 --version
 ```
-Check this hold survives after every `apt upgrade` — `apt-mark showhold` should always
-list all four. As of testing, 1.20.0 is available upstream and has **not** been
-confirmed to fix this issue.
-
+If that prints a Python version, you are fine. If it panics with the `cudacompat` error,
+fall back to the downgrade-and-hold of the four packages (`nvidia-container-toolkit`,
+`nvidia-container-toolkit-base`, `libnvidia-container-tools`, `libnvidia-container1`) at
+`1.18.2-1`.
 ### 8. Run it
 
 ```bash
@@ -202,6 +198,7 @@ docker run -d \
   --restart always \
   --shm-size=2g \
   --stop-timeout 30 \
+  --tmpfs /tmp/cache:size=1000000000 \
   -e NVIDIA_VISIBLE_DEVICES=all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
   -v /usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra:ro \
@@ -210,6 +207,12 @@ docker run -d \
   -v /home/YOUR_USER/frigate-jp7/storage:/media/frigate \
   frigate:latest
 ```
+
+The container uses `--network host`, so no `-p` mappings are needed. Port **5000** is the
+plain-HTTP, unauthenticated UI/API (what Home Assistant's integration uses); port **8971**
+is the authenticated UI/API with TLS (`https://<jetson-ip>:8971`, login required). In 0.18
+the config file is `config.yaml` (and the UI writes back into it, so
+`docker restart <container>` after editing it by hand).
 
 **Verify TensorRT/CUDA are actually active:**
 ```bash
@@ -257,10 +260,10 @@ need to use **Manual arguments** in the UI rather than the preset, with
 
 ---
 
-## Part 2 — Migrating to Frigate 0.18.0-beta3 (optional)
+## Part 2 — Migrating to Frigate 0.18.2 (optional)
 
-Everything from Part 1 that's genuinely hard to build — the base image, the
-onnxruntime wheel, the `nvidia-container-toolkit` fix — carries over completely
+Everything from Part 1 that's genuinely hard to build — the base image and the
+onnxruntime wheel — carries over completely
 unchanged. Only the Frigate-side build scripts need re-patching, since 0.18's version
 of them differs from 0.16.2's.
 
@@ -268,11 +271,21 @@ of them differs from 0.16.2's.
 
 ```bash
 cd ~
-git clone --branch v0.18.0-beta3 https://github.com/blakeblackshear/frigate.git frigate18
+git clone --branch v0.18.2 https://github.com/blakeblackshear/frigate.git frigate18
 cd frigate18
 cp /path/to/onnxruntime_gpu-1.23.0-cp312-cp312-linux_aarch64.whl docker/main/
 cp docker/main/Dockerfile docker/main/Dockerfile.jp7
 ```
+
+The patch files in `frigate-0.18-docker-files/` were written against 0.18.0-beta3 and
+applied unchanged to 0.18.0 and 0.18.2. When moving to any newer release, first check
+what upstream touched:
+```bash
+git fetch --tags
+git diff --stat v<old> v<new> -- docker/ Makefile
+```
+If a file you patch (or `requirements*.txt`, `install_hailort.sh`) shows up, read that
+diff before building.
 
 Keep your working Part 1 install running/intact throughout — this whole part is
 designed to be fully reversible if anything goes wrong.
@@ -382,7 +395,7 @@ RUN ldconfig
 ```
 Verify after building:
 ```bash
-docker run --rm --entrypoint python3 frigate18:latest \
+docker run --rm --runtime nvidia --entrypoint python3 frigate18:0.18.2 \
   -c "import onnxruntime; print(onnxruntime.__version__)"
 # expect your actual version, e.g. 1.23.0 — not something older
 ```
@@ -401,70 +414,70 @@ RUN pip3 install ai-edge-litert-nightly
 ### 9. New in 0.18 — arm64 ffmpeg has no NVDEC support at all
 
 0.18's `install_deps.sh` downloads generic community ffmpeg binaries for arm64, with no
-Jetson-specific decode support whatsoever — a real regression from whatever 0.16.2's
-own arm64 path did (never fully identified; possibly a locally-provided `.deb` baked
-into the base image assembly rather than anything Frigate's own scripts did). Rather
-than re-deriving that, reuse the known-good binary from your **already-built Part 1**
-image — this is why Part 1 has to happen first:
+Jetson-specific decode support. You need an NVDEC-capable ffmpeg 8.0.x
+(`--enable-nvv4l2dec`, decoders `h264_nvv4l2dec` / `hevc_nvv4l2dec`, and the `rtsp` and
+`sdp` demuxers). Its origin on the author's system was never fully established, so this
+guide does not assume where yours comes from; see "Redistribution" below.
 
-In `install_deps.sh`, guard out the generic tarball downloads for this base image
-(skip straight to nothing — we'll get ffmpeg a different way):
+Package the binaries as a tarball so the build does not depend on any local image tag.
+The bundle contains `usr/bin/ffmpeg`, `usr/bin/ffprobe` and, in
+`usr/lib/aarch64-linux-gnu/`, `libavdevice.so.62`, `libavfilter.so.11`,
+`libavformat.so.62`, `libavcodec.so.62`, `libswresample.so.6`, `libswscale.so.9`,
+`libavutil.so.60`. Create it from a container that already has a working copy (`-h`
+stores real files instead of symlinks):
 ```bash
-if [[ "${TARGETARCH}" == "arm64" ]]; then
-    if [[ "${BASE_IMAGE}" == *"jp7-base"* ]]; then
-        echo "Info: ffmpeg for jp7-base is supplied via Dockerfile COPY from frigate:latest, not downloaded here."
-    else
-        mkdir -p /usr/lib/ffmpeg/5.0
-        # ... (existing tarball download blocks, unchanged)
-    fi
-fi
+docker run --rm --entrypoint tar <image-with-ffmpeg> -czhf - \
+  /usr/bin/ffmpeg /usr/bin/ffprobe \
+  /usr/lib/aarch64-linux-gnu/libavdevice.so.62 /usr/lib/aarch64-linux-gnu/libavfilter.so.11 \
+  /usr/lib/aarch64-linux-gnu/libavformat.so.62 /usr/lib/aarch64-linux-gnu/libavcodec.so.62 \
+  /usr/lib/aarch64-linux-gnu/libswresample.so.6 /usr/lib/aarch64-linux-gnu/libswscale.so.9 \
+  /usr/lib/aarch64-linux-gnu/libavutil.so.60 > jp7-ffmpeg-nvdec.tgz
 ```
+Copy it to `docker/main/jp7-ffmpeg-nvdec.tgz` in the clone.
+
+In `install_deps.sh` the arm64 branch for this base image must not download the generic
+tarballs (the reference file does an apt install of stock ffmpeg plus symlinks; the
+Dockerfile overwrites those files in the next step, so either is fine).
 
 In `Dockerfile.jp7`, right after the `install_deps.sh` RUN block:
 ```dockerfile
 RUN --mount=type=bind,source=docker/main/install_deps.sh,target=/deps/install_deps.sh \
     /deps/install_deps.sh
 
-COPY --from=frigate:latest /usr/bin/ffmpeg /usr/bin/ffmpeg
-COPY --from=frigate:latest /usr/bin/ffprobe /usr/bin/ffprobe
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libavdevice.so.62 /lib/aarch64-linux-gnu/libavdevice.so.62
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libavfilter.so.11 /lib/aarch64-linux-gnu/libavfilter.so.11
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libavformat.so.62 /lib/aarch64-linux-gnu/libavformat.so.62
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libavcodec.so.62 /lib/aarch64-linux-gnu/libavcodec.so.62
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libswresample.so.6 /lib/aarch64-linux-gnu/libswresample.so.6
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libswscale.so.9 /lib/aarch64-linux-gnu/libswscale.so.9
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libavutil.so.60 /lib/aarch64-linux-gnu/libavutil.so.60
+ADD docker/main/jp7-ffmpeg-nvdec.tgz /
 RUN ldconfig
 RUN mkdir -p /usr/lib/ffmpeg/8.0/bin \
     && ln -sf /usr/bin/ffmpeg /usr/lib/ffmpeg/8.0/bin/ffmpeg \
     && ln -sf /usr/bin/ffprobe /usr/lib/ffmpeg/8.0/bin/ffprobe
 ```
-Only these 7 libraries are missing — everything else in ffmpeg's full dependency tree
-(150+ libraries) already resolves against packages already present from other build
-steps. Verify with `ldd` (`docker run --rm --entrypoint bash frigate:latest -c "ldd
-/usr/bin/ffmpeg | grep 'not found'"` should be empty on the source image before you
-trust the copy) — and confirm on the built image too:
+(`ADD` auto-extracts a local tar archive.) The symlinks matter: Frigate's
+`resolve_ffmpeg_path('default')` expects `/usr/lib/ffmpeg/8.0/bin/ffmpeg`. Only these 7
+libraries are missing; everything else in ffmpeg's dependency tree already resolves.
+Verify on the built image:
 ```bash
-docker run --rm --entrypoint bash frigate18:latest -c "ldd /usr/bin/ffmpeg | grep 'not found'"
-# expect: empty
-docker run --rm --entrypoint bash frigate18:latest -c "ffmpeg -version 2>&1 | grep -i nvv4l2"
-# expect: a line showing --enable-nvv4l2dec
+sudo docker run --rm --entrypoint bash frigate18:0.18.2 -c "ffmpeg -version | head -1; ffmpeg -hide_banner -decoders | grep -c nvv4l2; ffmpeg -hide_banner -demuxers | grep -Ec ' rtsp| sdp'; ldd /usr/bin/ffmpeg | grep -c 'not found'"
+# expect: n8.0.1-..., 6, 2, 0
 ```
 
+**Set `hwaccel_args` manually.** The 0.18 UI preset "NVIDIA Jetson (H.264)" uses
+`h264_nvmpi`, which this ffmpeg does not have (`Unknown decoder`). Use manual arguments
+`-c:v h264_nvv4l2dec` and never switch back to the preset.
 ### 10. Wire the Makefile and build
 
-Same as Part 1 step 5, but tag it separately so you can run both side by side and roll
-back instantly if anything's wrong:
+Same as Part 1 step 5, but use a versioned tag so you can run both side by side and roll
+back instantly if anything's wrong. Edit the stock `local:` target **in place on each
+fresh clone**; don't copy an old Makefile over it, because its `VERSION` line would make
+the UI report the wrong version.
 ```makefile
 local: version
 	docker buildx build --target=frigate --file docker/main/Dockerfile.jp7 . \
 		--build-arg BASE_IMAGE=lab5/jp7-base:cuda13.2-trt10.16 \
 		--build-arg SLIM_BASE=lab5/jp7-base:cuda13.2-trt10.16 \
-		--tag frigate18:latest \
+		--tag frigate18:0.18.2 \
 		--load
 ```
 ```bash
-sudo make local
+sudo make local 2>&1 | tee ~/build.log
 ```
 
 ### 11. Run it — test in isolation first
@@ -481,13 +494,14 @@ docker run -d \
   --restart always \
   --shm-size=2g \
   --stop-timeout 30 \
+  --tmpfs /tmp/cache:size=1000000000 \
   -e NVIDIA_VISIBLE_DEVICES=all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
   -v /usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra:ro \
   -v /etc/localtime:/etc/localtime:ro \
   -v /home/YOUR_USER/frigate18/config:/config \
   -v /home/YOUR_USER/frigate18/storage:/media/frigate \
-  frigate18:latest
+  frigate18:0.18.2
 
 docker logs -f frigate18
 ```
@@ -497,6 +511,61 @@ to exactly where Part 1 left off, untouched.
 
 ---
 
+## Keep your artifacts safe
+
+**Never run `docker system prune -a` or `docker image prune -a`.** They delete every image
+not used by a running container, including your base image and the ffmpeg source image
+(this happened once and the base image had to be reloaded from its tarball). Use
+`docker builder prune` or plain `docker image prune` only.
+
+Back up, and record `sha256sum` for, the three expensive artifacts:
+
+| Artifact | Checksum |
+|---|---|
+| `jp7-base-cuda13.2-trt10.16.tar` (`docker save` of the base image) | `e961ba5f778b30bb0e9012ff394a57e79b482faec7deca66ee3a60a199923ad0` |
+| `jp7-ffmpeg-nvdec.tgz` | `0a16c872461de05f71c3adced1b3f68bb671a682fe0568fb7813c4678d2c07bd` |
+| `onnxruntime_gpu-1.23.0-cp312-cp312-linux_aarch64.whl` (95.7 MiB) | `5569e79a347e65c04e73413da1ebdbb306c7d6d5dfe46e4d097d52f5cda74b75` |
+
+Keep your `config.yaml` backed up too, but never commit it: it holds camera and MQTT
+credentials.
+
+## Optional: trusted HTTPS on port 8971
+
+Frigate serves 8971 with whatever is in `/etc/letsencrypt/live/frigate/{fullchain.pem,privkey.pem}`
+inside the container and reloads nginx when the fingerprint changes. Create a local CA
+and certificate with [mkcert](https://github.com/FiloSottile/mkcert) on your PC:
+```
+mkcert -install
+mkcert -cert-file fullchain.pem -key-file privkey.pem frigate.local frigate <jetson-ip>
+```
+Upload both files to e.g. `~/frigate18/tls/` on the Jetson (`chmod 600 privkey.pem`) and
+add `-v /home/YOUR_USER/frigate18/tls:/etc/letsencrypt/live/frigate:ro` to the `docker run`.
+Install the mkcert root CA (`rootCA.pem`/`.crt`, from `mkcert -CAROOT`) on each client
+device and enable full trust (on iOS: Settings → General → About → Certificate Trust
+Settings). Never publish `rootCA-key.pem` or `privkey.pem`.
+
+## Optional: upgrading JetPack 7.2.0 → 7.2.1 in place
+
+Record state first (`apt-cache policy nvidia-jetpack`, `apt-mark showhold`,
+`docker images`, `docker ps -a`). If you still hold `nvidia-container-toolkit` at 1.18.2,
+`sudo apt install nvidia-jetpack` fails because `nvidia-container` depends on exactly
+toolkit 1.19.1-1: unhold it, install 1.19.1-1, test
+`docker run --rm --runtime nvidia <image> python3 --version`, then
+`sudo apt install nvidia-jetpack` and check `docker --version`. **Warning:** a community
+report says this upgrade can remove Docker CE on some units; if so, run
+`sudo apt-get install -y docker-ce docker-ce-cli containerd.io` and
+`sudo systemctl disable nv-install-docker.service`. It did not happen on the author's unit.
+
+## Redistribution
+
+The ffmpeg bundle was configured with `--enable-nonfree --enable-gpl`, which FFmpeg
+documents as not redistributable. The base-image tarball contains NVIDIA CUDA, TensorRT,
+cuDNN and L4T packages whose licences may also restrict redistribution. This is not legal
+advice; check the terms before publishing or downloading binaries from anyone. The safe
+route is to build the base image yourself (straga's `make base`) and to obtain or build
+your own ffmpeg.
+
+---
 ## Quick troubleshooting reference
 
 | Symptom | Cause | Fix section |
@@ -510,7 +579,7 @@ to exactly where Part 1 left off, untouched.
 | `AzureExecutionProvider` instead of Tensorrt/CUDA | Wrong/stock onnxruntime won the install | Part 2 §7 |
 | `ImportError: ... cannot import name 'LoraAdapter'` | Mixed-version onnxruntime install | Part 2 §7 (full wipe before install) |
 | `Unknown decoder 'h264_nvv4l2dec'` or `'h264_nvmpi'` | ffmpeg build doesn't match hwaccel_args / UI preset assumption | Check with `ffmpeg -decoders`, use Manual arguments |
-| Container panics with `cudacompat.trim: slice bounds out of range` | `nvidia-container-toolkit` 1.19.x bug on Tegra | Part 1 §7 |
+| Container panics with `cudacompat.trim: slice bounds out of range` | Old `nvidia-container-toolkit` 1.19.x bug on JetPack 7.2.0 | Part 1 §7 |
 | Object masks seem to "hide" everything | Masks are **exclusion-only** in Frigate, not inclusion | Delete/redraw the mask |
 
 ---
@@ -519,3 +588,5 @@ to exactly where Part 1 left off, untouched.
 
 Base image and onnxruntime wheel: **straga/jetson-jp7-onnxruntime**.
 Frigate: **blakeblackshear/frigate**.
+Community Jetson builds and the self-built ffmpeg work: **grossimd**
+(`ghcr.io/grossimd/frigate:0.18.2-tensorrt-jp7`).

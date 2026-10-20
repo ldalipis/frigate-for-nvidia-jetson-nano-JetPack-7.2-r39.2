@@ -1,0 +1,13 @@
+*.pem
+*.key
+*.crt
+*.tar
+*.tgz
+*.whl
+*.onnx
+*.pt
+config.yaml
+*.log
+rootCA*
+frigate-orin-context-summary.md
+.idea/

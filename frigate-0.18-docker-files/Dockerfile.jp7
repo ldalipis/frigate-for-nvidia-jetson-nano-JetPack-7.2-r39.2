@@ -268,20 +268,12 @@ ENV PATH="/usr/local/go2rtc/bin:/usr/local/tempio/bin:/usr/local/nginx/sbin:${PA
 RUN --mount=type=bind,source=docker/main/install_deps.sh,target=/deps/install_deps.sh \
     /deps/install_deps.sh
 
-# 0.18's generic arm64 ffmpeg download has no NVDEC (h264_nvv4l2dec) support. The real
-# NVDEC-capable binary in the working 0.16.2 build is a custom-built ffmpeg installed
-# as an apt package at /usr/bin/ffmpeg (not from any repo currently configured on this
-# base image — likely installed via a local .deb during base-image assembly). Copy the
-# real binaries directly, and place them at Frigate's default bundled-path resolution too.
-COPY --from=frigate:latest /usr/bin/ffmpeg /usr/bin/ffmpeg
-COPY --from=frigate:latest /usr/bin/ffprobe /usr/bin/ffprobe
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libavdevice.so.62 /lib/aarch64-linux-gnu/libavdevice.so.62
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libavfilter.so.11 /lib/aarch64-linux-gnu/libavfilter.so.11
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libavformat.so.62 /lib/aarch64-linux-gnu/libavformat.so.62
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libavcodec.so.62 /lib/aarch64-linux-gnu/libavcodec.so.62
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libswresample.so.6 /lib/aarch64-linux-gnu/libswresample.so.6
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libswscale.so.9 /lib/aarch64-linux-gnu/libswscale.so.9
-COPY --from=frigate:latest /lib/aarch64-linux-gnu/libavutil.so.60 /lib/aarch64-linux-gnu/libavutil.so.60
+# 0.18's generic arm64 ffmpeg download has no NVDEC (h264_nvv4l2dec) support. Unpack a
+# prebuilt NVDEC-capable ffmpeg bundle (ffmpeg, ffprobe and 7 libav* libraries, laid out
+# under usr/bin and usr/lib/aarch64-linux-gnu) over the root filesystem, then place the
+# binaries at Frigate's default bundled-path resolution too.
+# ADD auto-extracts a local tar archive. Put the bundle at docker/main/jp7-ffmpeg-nvdec.tgz.
+ADD docker/main/jp7-ffmpeg-nvdec.tgz /
 RUN ldconfig
 RUN mkdir -p /usr/lib/ffmpeg/8.0/bin \
     && ln -sf /usr/bin/ffmpeg /usr/lib/ffmpeg/8.0/bin/ffmpeg \
