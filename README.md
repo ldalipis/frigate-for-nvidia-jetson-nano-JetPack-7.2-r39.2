@@ -31,22 +31,31 @@ yourself following the same underlying approach.
 ### What you need before touching Frigate
 
 **1. A CUDA 13.2 + TensorRT 10.16 + cuDNN base image for this platform.**
-This doesn't exist prebuilt anywhere — it has to be assembled from the public Jetson apt
-repo. [Download: <a href="https://huggingface.co/ldalipis/jp7-base-cuda13.2-trt10.16/blob/main/jp7-base-cuda13.2-trt10.16.tar">jp7-base-cuda13.2-trt10.16.tar</a>, `docker load` it and tag it
-`lab5/jp7-base:cuda13.2-trt10.16` to match the commands below, or adjust the tag
-throughout.]
+This doesn't exist prebuilt anywhere, and it can't be shared as a download because it
+contains NVIDIA's CUDA/TensorRT/cuDNN packages. Build it yourself from the public Jetson
+apt repo with straga's recipe (`docker/base/Dockerfile`):
+```bash
+git clone https://github.com/straga/jetson-jp7-onnxruntime
+cd jetson-jp7-onnxruntime
+sudo make base
+```
+Tag the result `lab5/jp7-base:cuda13.2-trt10.16` to match the commands below, or adjust
+the tag throughout. The author's image was ~27 GB on disk. Once built, back it up with
+`docker save` and record its `sha256sum` (see "Keep your artifacts safe").
 
 **2. `onnxruntime-gpu` compiled for CUDA 13.2 / aarch64 / sm_87 / Python 3.12.**
-No prebuilt wheel exists for JetPack 7 anywhere — this has to be compiled from source,
-and it's the single most time- and memory-intensive part of this whole project (budget
-real time and make sure you have swap configured — 16GB was sufficient on an Orin Nano).
-Not covered in this guide. [Download: <a href="https://huggingface.co/ldalipis/jp7-base-cuda13.2-trt10.16/blob/main/onnxruntime_gpu-1.23.0-cp312-cp312-linux_aarch64.whl">onnxruntime_gpu-1.23.0-cp312-cp312-linux_aarch64.whl</a>]
+No prebuilt wheel exists for JetPack 7 on PyPI. Compiling it from source is the most
+time- and memory-intensive part of this project (budget real time and make sure you have
+swap configured, 16GB was sufficient on an Orin Nano); straga's repo has the build
+scripts. Or use the wheel the author built from that recipe (onnxruntime is MIT licensed
+and the wheel bundles no NVIDIA libraries):
+[onnxruntime_gpu-1.23.0-cp312-cp312-linux_aarch64.whl](https://huggingface.co/ldalipis/jp7-onnxruntime-gpu/blob/main/onnxruntime_gpu-1.23.0-cp312-cp312-linux_aarch64.whl)
+(SHA256 in the table below).
 
-Both of the above credit **straga's `jetson-jp7-onnxruntime`** project, which pioneered
+Both credit **straga's `jetson-jp7-onnxruntime`** project (MIT licensed), which pioneered
 this specific combination for JetPack 7.2.
 
 ---
-
 ## Part 1 — Frigate 0.16.2
 
 ### 1. Clone and set up the build context
@@ -522,7 +531,7 @@ Back up, and record `sha256sum` for, the three expensive artifacts:
 
 | Artifact | Checksum |
 |---|---|
-| `jp7-base-cuda13.2-trt10.16.tar` (`docker save` of the base image) | `e961ba5f778b30bb0e9012ff394a57e79b482faec7deca66ee3a60a199923ad0` |
+| `jp7-base-cuda13.2-trt10.16.tar` (`docker save` of **your own** base build; not published, so your hash will differ from the author's `e961ba5f…`) | `e961ba5f778b30bb0e9012ff394a57e79b482faec7deca66ee3a60a199923ad0` |
 | `jp7-ffmpeg-nvdec.tgz` | `0a16c872461de05f71c3adced1b3f68bb671a682fe0568fb7813c4678d2c07bd` |
 | `onnxruntime_gpu-1.23.0-cp312-cp312-linux_aarch64.whl` (95.7 MiB) | `5569e79a347e65c04e73413da1ebdbb306c7d6d5dfe46e4d097d52f5cda74b75` |
 
@@ -561,9 +570,7 @@ report says this upgrade can remove Docker CE on some units; if so, run
 The ffmpeg bundle was configured with `--enable-nonfree --enable-gpl`, which FFmpeg
 documents as not redistributable. The base-image tarball contains NVIDIA CUDA, TensorRT,
 cuDNN and L4T packages whose licences may also restrict redistribution. This is not legal
-advice; check the terms before publishing or downloading binaries from anyone. The safe
-route is to build the base image yourself (straga's `make base`) and to obtain or build
-your own ffmpeg.
+advice; check the terms before publishing or downloading binaries from anyone. The base tarball is therefore not published here: build the base image yourself\n(straga's `make base`) and obtain or build your own ffmpeg.
 
 ---
 ## Quick troubleshooting reference
