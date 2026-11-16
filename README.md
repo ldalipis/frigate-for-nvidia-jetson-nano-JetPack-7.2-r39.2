@@ -36,6 +36,25 @@ clean driver-abstraction layer the way `nvidia-docker` provides on x86 CUDA setu
 you're not on **JetPack 7.2 / L4T r39.2** specifically, the base image below may not work
 cleanly for you, and you may need to adapt it.
 
+Check on the Jetson:
+```bash
+cat /etc/nv_tegra_release
+```
+`# R39 (release), REVISION: 2.1` means JetPack 7.2.1 (Jetson Linux 39.2.1, Ubuntu 24.04),
+which NVIDIA's Orin Nano user guide listed as the current release as of October 2026.
+`REVISION: 2.0` is 7.2.0 (see "Optional: upgrading JetPack 7.2.0 → 7.2.1 in place").
+R36.x is JetPack 6 and R35.x is JetPack 5; neither can be upgraded to 7.2 over apt, so you
+have to reflash. JetPack 7.2 also requires the JetPack 6-generation UEFI/QSPI firmware on
+the Orin Nano dev kit: if the kit still has older factory firmware, take it through the
+JetPack 6 update first.
+
+Also check the power mode, because some JetPack 7.2 installs keep the old non-Super
+power profile:
+```bash
+sudo nvpmodel -q
+```
+On the Orin Nano Super, expect `NV Power Mode: MAXN_SUPER` / `2`.
+
 ### What you need before touching Frigate
 
 **1. A CUDA 13.2 + TensorRT 10.16 + cuDNN base image for this platform.**
